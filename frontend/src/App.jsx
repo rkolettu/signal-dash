@@ -157,8 +157,6 @@ export default function App() {
   const [officials, setOfficials] = useState([])
   const [signals, setSignals] = useState([])
   const [ticker, setTicker] = useState(null)
-  // 'loading' until the first batch lands, so a cold-starting backend reads
-  // as "waking up" rather than as an app with no data in it.
   const [status, setStatus] = useState('loading')
 
   useEffect(() => { getFeed(filters).then(setPosts).catch(() => {}) }, [filters])
@@ -188,33 +186,66 @@ export default function App() {
       </div>
 
       {status === 'loading' && (
-        <div className="notice waking">
-          Waking the backend… it sleeps after 15 minutes idle on free hosting,
-          so the first load can take up to a minute.
+        <div
+          className="notice waking"
+          style={{
+            minHeight: 190,
+            padding: '1.6rem',
+            marginTop: '1rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: '0.45rem',
+          }}
+        >
+          <strong style={{ color: 'var(--text)', fontSize: '1.05rem' }}>Loading market data…</strong>
+          <span>
+            Signal Dash runs on free hosting, so the backend goes to sleep after
+            being idle. The first visit can take up to a minute while it wakes up.
+          </span>
+          <span className="meta">The dashboard will appear automatically when the data service is ready.</span>
         </div>
       )}
 
       {status === 'error' && (
-        <div className="notice failed">
-          Couldn't reach the backend. It may still be starting up — reload in
-          a moment and it should come through.
+        <div
+          className="notice failed"
+          style={{
+            minHeight: 150,
+            padding: '1.6rem',
+            marginTop: '1rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: '0.45rem',
+          }}
+        >
+          <strong style={{ color: 'var(--text)', fontSize: '1.05rem' }}>The backend didn't respond.</strong>
+          <span>It may still be starting up. Reload the page in a moment and the dashboard should come through.</span>
         </div>
       )}
-      <Filters filters={filters} setFilters={setFilters} officials={officials} stocks={stocks} />
-      <main className="grid">
-        <section className="col">
-          <h2>Flagged feed <span className="count mono">{posts.length}</span></h2>
-          <Feed posts={posts} onPickTicker={pickTicker} />
-        </section>
-        <section className="col">
-          <h2>Price correlation</h2>
-          <PriceChart ticker={ticker} />
-          <h2>Mentioned stocks</h2>
-          <StocksTable stocks={stocks} onPick={pickTicker} active={ticker} />
-          <h2>Trading signals</h2>
-          <Signals signals={signals} onPickTicker={pickTicker} />
-        </section>
-      </main>
+
+      {status === 'ready' && (
+        <>
+          <Filters filters={filters} setFilters={setFilters} officials={officials} stocks={stocks} />
+          <main className="grid">
+            <section className="col">
+              <h2>Flagged feed <span className="count mono">{posts.length}</span></h2>
+              <Feed posts={posts} onPickTicker={pickTicker} />
+            </section>
+            <section className="col">
+              <h2>Price correlation</h2>
+              <PriceChart ticker={ticker} />
+              <h2>Mentioned stocks</h2>
+              <StocksTable stocks={stocks} onPick={pickTicker} active={ticker} />
+              <h2>Trading signals</h2>
+              <Signals signals={signals} onPickTicker={pickTicker} />
+            </section>
+          </main>
+        </>
+      )}
     </div>
   )
 }
