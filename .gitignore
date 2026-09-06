@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+backend/signal.db
+
+# Node
+node_modules/
+dist/
+
+# Editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Leftover empty dir from a shell typo, not real project structure
+backend/{ingest,analysis}/

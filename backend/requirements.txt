@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+requests
+yfinance
+vaderSentiment
+# optional live ingestion:
+# git+https://github.com/stanfordio/truthbrush.git

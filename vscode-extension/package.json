@@ -1,0 +1,52 @@
+{
+  "name": "signal-dash",
+  "displayName": "Signal Dash",
+  "description": "Stock mentions in official posts — dashboard inside VS Code",
+  "version": "0.1.0",
+  "publisher": "signal-dash",
+  "private": true,
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "signal-dash.openDashboard",
+        "title": "Signal Dash: Open Dashboard"
+      }
+    ],
+    "configuration": {
+      "title": "Signal Dash",
+      "properties": {
+        "signalDash.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Python interpreter used to run the backend (needs fastapi, uvicorn, etc. installed). When left at the default, backend/.venv is used automatically if it exists."
+        },
+        "signalDash.port": {
+          "type": "number",
+          "default": 8000,
+          "description": "Port the FastAPI backend listens on."
+        },
+        "signalDash.backendPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the backend/ directory. Leave empty to auto-detect (workspace folder containing backend/app.py, else the folder next to this extension)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node scripts/copy-frontend.mjs && npm run typecheck && npm run bundle",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  }
+}
