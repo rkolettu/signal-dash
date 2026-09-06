@@ -1,6 +1,13 @@
-// In the browser build this is '' (vite dev proxy / same origin); inside the
-// VS Code webview the extension injects window.__SIGNAL_DASH_API__.
-const BASE = typeof window !== 'undefined' && window.__SIGNAL_DASH_API__ || ''
+// Three ways BASE gets set, checked in order:
+//  1. window.__SIGNAL_DASH_API__ — injected by the VS Code extension webview.
+//  2. VITE_API_BASE_URL — set at build time on Vercel to the deployed
+//     backend's URL, since production frontend and backend live on
+//     different domains with no dev proxy between them.
+//  3. '' — local dev, where vite.config.js proxies /api to localhost:8000.
+const BASE =
+  (typeof window !== 'undefined' && window.__SIGNAL_DASH_API__) ||
+  import.meta.env.VITE_API_BASE_URL ||
+  ''
 
 const q = (params) => {
   const s = new URLSearchParams(

@@ -8,6 +8,17 @@ from db import conn
 from analysis import prices, signals as sig
 
 db.init()
+
+# The DB ships empty (signal.db is gitignored — it's generated, not source).
+# Seed the synthetic demo dataset once on first boot; content_hash dedup
+# in seed_demo would otherwise let a re-run at a later wall-clock time
+# insert near-duplicate rows, so this only fires when posts is empty.
+with conn() as _c:
+    _needs_seed = _c.execute("SELECT COUNT(*) FROM posts").fetchone()[0] == 0
+if _needs_seed:
+    import seed_demo
+    seed_demo.main()
+
 app = FastAPI(title="Signal Dash")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
