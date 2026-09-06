@@ -157,12 +157,19 @@ export default function App() {
   const [officials, setOfficials] = useState([])
   const [signals, setSignals] = useState([])
   const [ticker, setTicker] = useState(null)
+  // 'loading' until the first batch lands, so a cold-starting backend reads
+  // as "waking up" rather than as an app with no data in it.
+  const [status, setStatus] = useState('loading')
 
-  useEffect(() => { getFeed(filters).then(setPosts) }, [filters])
+  useEffect(() => { getFeed(filters).then(setPosts).catch(() => {}) }, [filters])
   useEffect(() => {
-    getStocks().then(setStocks)
-    getSignals().then(setSignals)
-    getOfficials().then(setOfficials)
+    Promise.all([
+      getStocks().then(setStocks),
+      getSignals().then(setSignals),
+      getOfficials().then(setOfficials),
+    ])
+      .then(() => setStatus('ready'))
+      .catch(() => setStatus('error'))
   }, [])
 
   const pickTicker = (t) => { setTicker(t); setFilters({ ...filters, ticker: t }) }
@@ -173,6 +180,26 @@ export default function App() {
         <h1>SIGNAL<span>/</span>DASH</h1>
         <p>Stock mentions in official posts · Truth Social + X · research use</p>
       </header>
+
+      <div className="notice demo">
+        <strong>Demo.</strong> Posts shown are synthetic samples, not real
+        statements by any official. The ingestion pipeline is built and pulls
+        live Truth Social and X posts once API credentials are configured.
+      </div>
+
+      {status === 'loading' && (
+        <div className="notice waking">
+          Waking the backend… it sleeps after 15 minutes idle on free hosting,
+          so the first load can take up to a minute.
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div className="notice failed">
+          Couldn't reach the backend. It may still be starting up — reload in
+          a moment and it should come through.
+        </div>
+      )}
       <Filters filters={filters} setFilters={setFilters} officials={officials} stocks={stocks} />
       <main className="grid">
         <section className="col">
