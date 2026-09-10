@@ -3,6 +3,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip,
   ReferenceDot, CartesianGrid,
 } from 'recharts'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { getFeed, getStocks, getChart, getSignals, getOfficials, exportUrl } from './api.js'
 
 const RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
@@ -174,6 +175,7 @@ export default function App() {
 
   return (
     <div className="shell">
+      <SpeedInsights />
       <header className="masthead">
         <h1>SIGNAL<span>/</span>DASH</h1>
         <p>Stock mentions in official posts · Truth Social + X · research use</p>
