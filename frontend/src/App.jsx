@@ -3,6 +3,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip,
   ReferenceDot, CartesianGrid,
 } from 'recharts'
+import { Analytics } from '@vercel/analytics/react'
 import { getFeed, getStocks, getChart, getSignals, getOfficials, exportUrl } from './api.js'
 
 const RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
@@ -246,6 +247,7 @@ export default function App() {
           </main>
         </>
       )}
+      <Analytics />
     </div>
   )
 }
