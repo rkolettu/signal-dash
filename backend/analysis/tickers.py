@@ -5,6 +5,10 @@ Two match classes only (per spec -- no indirect references):
      AND not a common English word (whitelist approach for bare tickers).
   2. Company names from SEC's public company_tickers.json, normalized
      (strip Inc/Corp/Co/Ltd suffixes), matched on word boundaries.
+     Names are proper nouns, so a one-word name must appear capitalized
+     ("Tesla", "TESLA"), and one-word names that are everyday words
+     ("bullish" -> Bullish, "team" -> Team Inc.) never match on the name
+     alone -- they need a cashtag or bare ticker.
 """
 import json, os, re, urllib.request
 
@@ -18,6 +22,33 @@ AMBIGUOUS = {"A","ALL","AN","ANY","ARE","BE","BIG","BY","CAN","CAR","CAT","DD",
              "NEXT","NICE","NOW","ON","ONE","OPEN","OR","OUT","PLAY","REAL",
              "RUN","SEE","SO","SAFE","TELL","TWO","UP","WELL","YOU","EAT","BEST",
              "TRUE","LIFE","EVER","FAST","FREE","HUGE","JOB","PAY","BIG"}
+
+# One-word company names (after suffix stripping) that are everyday words,
+# or common first names / place names, in posts by officials. Matching them
+# on the name alone produces far more false positives than real mentions,
+# so they need a cashtag or bare ticker instead ($BLSH, $TISI). Reviewed by
+# hand from the SEC names that appear in a common-English word list; brands
+# whose name mostly means the company (Apple, Intel, Oracle, Target, Shell)
+# are left matchable.
+COMMON_WORD_NAMES = {
+    "align", "alpha", "amaze", "angle", "authentic", "awareness", "ball", "bandwidth",
+    "banner", "beta", "bill", "block", "booking", "brunswick", "bullish",
+    "cheer", "citizens", "city", "click", "cluster", "coffee", "crown",
+    "crypto", "dana", "decent", "dover", "eastern", "emerging", "employers",
+    "enhanced", "flex", "fold", "forge", "fort", "fossil", "founder",
+    "freedom", "freight", "frequency", "frontier", "genius", "global", "glow",
+    "grab", "graham", "gravity", "hammer", "happen", "harmonic", "hello",
+    "here", "highway", "honest", "icon", "innovate", "integer",
+    "intelligent", "interface", "joint", "lindsay", "lion", "lotus",
+    "madison", "maiden", "marcus", "match", "mind", "minerals", "mint",
+    "morgan", "nasdaq", "navigator", "news", "next", "nice", "noble", "nova",
+    "opera", "orange", "outdoor", "paid", "pattern", "people", "perfect",
+    "poet", "pool", "popular", "post", "priority", "reliability",
+    "reliance", "rogers", "root", "seek", "senior", "snap", "sound",
+    "southern", "star", "stem", "strategy", "team", "tiny", "track", "tyler",
+    "vertex", "viking", "visa", "visionary", "weed", "winners", "wise",
+    "wrap",
+}
 
 # Minimal fallback if SEC fetch fails (offline dev).
 FALLBACK = {
@@ -52,23 +83,37 @@ def load_universe():
             json.dump(data, open(CACHE, "w"))
         except Exception:
             data = None
-    tickers, names = {}, {}
-    if data:
-        for row in data.values():
-            t, n = row["ticker"].upper(), row["title"]
-            tickers[t] = n
-            norm = _normalize_name(n)
-            if len(norm) >= 4:  # skip ultra-short normalized names
-                names[norm] = (t, n)
-    else:
-        for t, n in FALLBACK.items():
-            tickers[t] = n
-            names[_normalize_name(n)] = (t, n)
-    _universe = (tickers, names)
+    rows = [(r["ticker"], r["title"]) for r in data.values()] if data else list(FALLBACK.items())
+    _universe = build_universe(rows)
     return _universe
+
+def _is_share_class(ticker: str) -> bool:
+    """Preferred shares, notes and share classes: BA-PA, F-PD, BRK.B."""
+    return "-" in ticker or "." in ticker
+
+def build_universe(rows):
+    """rows: (ticker, title) pairs in SEC file order.
+
+    Several SEC rows can share an issuer's title (BOEING CO is both BA and
+    BA-PA). The file lists rows by market value, so the first row for a name
+    is normally the common stock; a plain ticker also always wins over a
+    share-class one, in case the order ever differs.
+    """
+    tickers, names = {}, {}
+    for t, n in rows:
+        t = t.upper()
+        tickers.setdefault(t, n)
+        norm = _normalize_name(n)
+        if len(norm) < 4:  # skip ultra-short normalized names
+            continue
+        prev = names.get(norm)
+        if prev is None or (_is_share_class(prev[0]) and not _is_share_class(t)):
+            names[norm] = (t, n)
+    return tickers, names
 
 _CASHTAG = re.compile(r"\$([A-Za-z]{1,5})\b")
 _BAREWORD = re.compile(r"\b([A-Z]{2,5})\b")
+_WORD = re.compile(r"[\w&]+")
 
 def extract(text: str):
     """Return list of {ticker, company, match_text}. Explicit mentions only."""
@@ -91,7 +136,12 @@ def extract(text: str):
             add(t, tickers[t], t)
 
     low = " " + _normalize_name(text) + " "
+    # Words written as proper nouns: "Tesla", "TESLA" (not "tesla").
+    capitalized = {w.lower() for w in _WORD.findall(text) if w[0].isupper()}
     for norm, (t, c) in names.items():
-        if f" {norm} " in low:
+        if " " in norm:
+            if f" {norm} " in low:
+                add(t, c, norm)
+        elif norm in capitalized and norm not in COMMON_WORD_NAMES:
             add(t, c, norm)
     return found
