@@ -9,7 +9,7 @@ const PIPELINE = [
   {
     n: '02',
     name: 'Detect',
-    text: 'Cashtags, unambiguous bare tickers and exact company names from the SEC ticker list. Nothing is inferred from phrases like “big tech”.',
+    text: 'Cashtags, unambiguous bare tickers and exact company names from the SEC ticker list, resolved to the common stock. Nothing is inferred from phrases like “big tech”.',
     src: 'analysis/tickers.py',
   },
   {
@@ -66,11 +66,12 @@ export default function Method({ csv }) {
             </li>
             <li>
               <strong>Daily closes only.</strong> A same-day move can’t be split into before and after the post, so the base close
-              can fall a few hours after it.
+              can fall a few hours after it. A trading day counts only once it has closed.
             </li>
             <li>
-              <strong>Name matching can misfire.</strong> Ordinary words that are also company names get matched. In the demo,
-              “bullish” resolves to Bullish (BLSH) and “team” to Team Inc. (TISI). Cashtags are the most reliable match.
+              <strong>Name matching is literal.</strong> A one-word company name counts only when it’s capitalized, and names
+              that are everyday words (“bullish”, “team”) need a cashtag like $BLSH. A capitalized or all-caps word can still
+              collide with a ticker; cashtags are the most reliable match.
             </li>
             <li>
               <strong>Tone is a lexicon score.</strong> VADER is general-purpose; it can miss sarcasm and finance-specific
