@@ -33,8 +33,9 @@ wakes up afterwards, the header offers to switch to live data.
 The snapshot is produced by the real pipeline, not written by hand: the
 synthetic demo posts go through ticker extraction, VADER and the flag rule in a
 throwaway database, and the file holds exactly what the API returns, including
-real Yahoo Finance daily closes and the CSV export rows. Regenerate it after the
-U.S. market close so the newest bar is a final close:
+real Yahoo Finance daily closes and the CSV export rows. Only completed trading
+sessions are included, so run it after the U.S. market close to include that
+day's close:
 
 ```bash
 cd backend && python export_snapshot.py

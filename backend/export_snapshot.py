@@ -8,8 +8,9 @@ holds exactly what the API endpoints return -- including daily closes from
 Yahoo Finance and the CSV export rows with +1/+7/+30-day changes.
 
 Run: python export_snapshot.py   (needs network access for SEC + yfinance)
-Run it after the U.S. market close (20:00 UTC) so the newest daily bar is a
-final close rather than a moving intraday price.
+Prices only include completed sessions (see analysis/prices.py), so a run
+during market hours ends at the previous close; run after the U.S. close to
+include that day.
 """
 import datetime as dt
 import json
