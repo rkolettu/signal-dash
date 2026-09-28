@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Analytics } from '@vercel/analytics/react'
 import { getFeed, getStocks, getSignals, getChart, FEED_LIMIT, exportUrl, loadSnapshot, toCSV } from './api.js'
 import { buildModel, aggregate, matches, isFiltered, EMPTY_FILTERS } from './lib/data.js'
-import { prefersReducedMotion, safeSession, useMedia, useReducedMotion } from './lib/motion.js'
+import { prefersReducedMotion, useMedia, useReducedMotion } from './lib/motion.js'
 import Header from './components/Header.jsx'
 import FilterRail from './components/FilterRail.jsx'
 import Stage from './components/Stage.jsx'
+import { STEPS } from './components/Intro.jsx'
 import Companies from './components/Companies.jsx'
 import Statements from './components/Statements.jsx'
 import FlaggedDays from './components/FlaggedDays.jsx'
@@ -25,6 +26,9 @@ const STATIC = import.meta.env.VITE_DATA_SOURCE === 'snapshot'
 const ANALYTICS = typeof window !== 'undefined' && !window.__SIGNAL_DASH_API__
 // How long to wait on a sleeping API before showing the bundled snapshot.
 const SNAPSHOT_AFTER = 12
+// Intro story pacing: first step, then one pipeline step every STEP_MS.
+const STORY_START = 700
+const STEP_MS = 2300
 
 function useData() {
   const [attempt, setAttempt] = useState(0)
@@ -186,26 +190,45 @@ export default function App() {
   const source = { load, pendingLive, switchToLive, retry, snapshot, isStatic: STATIC }
 
   /* ---- intro: full-bleed loader → docking → dashboard ---- */
-  const [intro, setIntro] = useState(() => (prefersReducedMotion() || safeSession('sd-intro') ? 'docked' : 'full'))
+  // The intro always tells its whole story (the five pipeline steps) before
+  // the data takes over the stage, however fast the data arrives. The status
+  // line still says when loading finished; Skip jumps straight in.
+  const [intro, setIntro] = useState(() => (prefersReducedMotion() ? 'docked' : 'full'))
+  const [step, setStep] = useState(0)
+  const [told, setTold] = useState(intro !== 'full')
   useEffect(() => {
-    if (intro !== 'full' || load.phase !== 'ready') return undefined
-    // Quick loads dock almost at once; after a long wait, let the noise
-    // visibly organise on the full-bleed stage before it docks.
-    const t = setTimeout(() => setIntro('docking'), load.readyIn < 900 ? 300 : 1300)
+    if (intro !== 'full' || load.phase === 'error') {
+      setStep(0)
+      return undefined
+    }
+    let n = 0
+    let id = 0
+    const next = () => {
+      n += 1
+      if (n > STEPS.length) setTold(true)
+      // Keep cycling while the data is still on its way.
+      setStep(((n - 1) % STEPS.length) + 1)
+      id = setTimeout(next, STEP_MS)
+    }
+    id = setTimeout(next, STORY_START)
+    return () => clearTimeout(id)
+  }, [intro, load.phase])
+  const shown = told || intro !== 'full' ? model : null
+  useEffect(() => {
+    if (intro !== 'full' || !shown) return undefined
+    // Let the headline count up and the noise organise before docking.
+    const t = setTimeout(() => setIntro('docking'), 1700)
     return () => clearTimeout(t)
-  }, [intro, load.phase, load.readyIn])
+  }, [intro, shown])
   useEffect(() => {
     if (intro !== 'docking') return undefined
-    const t = setTimeout(
-      () => {
-        setIntro('docked')
-        safeSession('sd-intro', '1')
-      },
-      reduced ? 0 : 1350,
-    )
+    const t = setTimeout(() => setIntro('docked'), reduced ? 0 : 1350)
     return () => clearTimeout(t)
   }, [intro, reduced])
-  const skip = useCallback(() => setIntro((i) => (i === 'full' ? 'docking' : i)), [])
+  const skip = useCallback(() => {
+    setTold(true)
+    setIntro((i) => (i === 'full' ? 'docking' : i))
+  }, [])
   useEffect(() => {
     document.documentElement.classList.toggle('is-locked', intro === 'full')
   }, [intro])
@@ -302,7 +325,9 @@ export default function App() {
       <main>
         <h1 className="sr-only">Signal Dash: company mentions by U.S. officials and the stock around each one</h1>
         <Stage
-          model={model}
+          model={shown}
+          loaded={model}
+          step={step}
           load={load}
           visible={visible}
           agg={agg}

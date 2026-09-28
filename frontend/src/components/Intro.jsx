@@ -49,12 +49,12 @@ function Swap({ id, children }) {
   )
 }
 
-const Intro = forwardRef(function Intro({ model, load, step, intro, onSkip, onRetry, reduced }, h1Ref) {
+const Intro = forwardRef(function Intro({ model, loaded, load, step, intro, onSkip, onRetry, reduced }, h1Ref) {
   const mentions = useCountUp(model ? model.mentions.length : 0, { duration: 1700 })
   const posts = useCountUp(model ? model.posts.length : 0, { duration: 1700 })
   const waiting = !model && load.phase !== 'error'
   const showSteps = waiting && step > 0 && !reduced
-  const showSkip = intro === 'full' && (load.phase === 'waking' || load.phase === 'error')
+  const showSkip = intro === 'full'
 
   useEffect(() => {
     if (!showSkip) return undefined
@@ -102,12 +102,12 @@ const Intro = forwardRef(function Intro({ model, load, step, intro, onSkip, onRe
           </ol>
         </div>
 
-        <LoadStatus load={load} model={model} onRetry={onRetry} />
+        <LoadStatus load={load} model={loaded} onRetry={onRetry} />
       </div>
 
       {showSkip && (
         <button type="button" className="skip" onClick={onSkip}>
-          Skip intro <span aria-hidden="true">↘</span>
+          {loaded ? 'Enter dashboard' : 'Skip intro'} <span aria-hidden="true">↘</span>
         </button>
       )}
     </div>

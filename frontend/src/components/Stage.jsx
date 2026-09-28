@@ -12,6 +12,8 @@ import ErrorBoundary from './ErrorBoundary.jsx'
 export default function Stage(props) {
   const {
     model,
+    loaded,
+    step,
     load,
     visible,
     agg,
@@ -175,28 +177,16 @@ export default function Stage(props) {
       companies: model.companyOrder.map((t) => ({ ticker: t, total: model.mentions.filter((m) => m.ticker === t).length })),
       links: model.coMentions,
     })
-    const fast = load.readyIn != null && load.readyIn < 900
-    engine.organize(fast || intro === 'docked' ? { spread: 800, dur: 1300 } : { spread: 1000, dur: 1500 })
+    engine.organize(intro === 'docked' ? { spread: 800, dur: 1300 } : { spread: 1000, dur: 1500 })
     // Organize once per dataset.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, model])
 
   useEffect(() => engine?.setVisible(visible), [engine, visible])
 
-  // Cold-start explainer: step through the pipeline while waiting.
+  // The intro's pipeline story (its steps are timed by App) plays on the
+  // noise until the data is handed over.
   const waiting = !model && load.phase !== 'error'
-  const [step, setStep] = useState(0)
-  useEffect(() => {
-    if (!waiting || reduced || load.elapsed < 1.2) {
-      setStep(0)
-      return undefined
-    }
-    const id = setInterval(() => setStep((s) => (s + 1) % 6), 3400)
-    setStep(1)
-    return () => clearInterval(id)
-    // restart only when waiting begins/ends
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waiting, reduced, load.elapsed >= 1.2])
   useEffect(() => {
     if (!engine) return
     engine.setConcept(waiting && step > 0 && step < 6 ? step : null)
@@ -280,6 +270,7 @@ export default function Stage(props) {
           <Intro
             ref={introH1}
             model={model}
+            loaded={loaded}
             load={load}
             step={step}
             intro={intro}
