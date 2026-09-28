@@ -15,3 +15,6 @@ dist/
 
 # Leftover empty dir from a shell typo, not real project structure
 backend/{ingest,analysis}/
+
+# Cached SEC ticker list, downloaded on first run
+backend/analysis/sec_tickers.json
