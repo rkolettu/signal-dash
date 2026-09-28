@@ -50,15 +50,17 @@ Two scheduled workflows in `.github/workflows/` keep the hosted demo current
 at no cost (Actions minutes are free for public repositories):
 
 - **Keep API warm** (`keep-api-warm.yml`) requests `/api/officials` every
-  10 minutes so Render's free instance never goes to sleep. One service
+  5 minutes so Render's free instance never goes to sleep (scheduled runs can
+  start a few minutes late, so a longer interval can miss). One service
   running all month fits in Render's 750 free instance hours. If the API
   moves, set the repository variable `SIGNAL_DASH_API_URL`.
 - **Refresh demo snapshot** (`refresh-snapshot.yml`) runs on weekdays after
   the U.S. close. It runs the backend tests, re-exports the snapshot with that
   day's closes, checks it (enough prices, nothing stale) and commits it to
-  `main`, which redeploys Vercel. A run that can't get good data fails
-  without committing, so the last good snapshot stays. Both workflows can
-  also be started by hand from the Actions tab.
+  `main` (rebasing first if `main` moved meanwhile), which redeploys Vercel.
+  A run that can't get good data fails without committing, so the last good
+  snapshot stays. Both workflows can also be started by hand from the
+  Actions tab.
 
 GitHub disables scheduled workflows in public repositories after 60 days
 without activity; the daily snapshot commit keeps them running.
@@ -87,7 +89,9 @@ channel. To install permanently: `npx @vscode/vsce package` in
    then `export TRUTHSOCIAL_USERNAME=... TRUTHSOCIAL_PASSWORD=...` (throwaway account).
 3. X: sign up at twitterapi.io ($1 trial credit), `export TWITTERAPI_IO_KEY=...`
 4. Trigger ingestion: `curl -X POST localhost:8000/api/ingest/truth_social`
-   and `/api/ingest/x`. Schedule via cron every 15–30 min.
+   and `/api/ingest/x`. Schedule via cron every 15–30 min. The endpoint only
+   answers local calls unless you set `INGEST_TOKEN` on the server; then send
+   `-H "Authorization: Bearer $INGEST_TOKEN"` from anywhere.
 5. Delete `backend/signal.db` first to clear demo data.
 
 ## Costs

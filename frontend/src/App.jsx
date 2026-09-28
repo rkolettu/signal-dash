@@ -20,6 +20,9 @@ export const DEMO = import.meta.env.VITE_DEMO_DATA !== 'false'
 
 // VITE_DATA_SOURCE=snapshot builds a static site that never calls the API.
 const STATIC = import.meta.env.VITE_DATA_SOURCE === 'snapshot'
+// Vercel Analytics only works on the Vercel deploy; the VS Code webview (which
+// injects its API URL) blocks its script and would log a failed request.
+const ANALYTICS = typeof window !== 'undefined' && !window.__SIGNAL_DASH_API__
 // How long to wait on a sleeping API before showing the bundled snapshot.
 const SNAPSHOT_AFTER = 12
 
@@ -95,41 +98,53 @@ function useData() {
 // Daily closes per ticker. In snapshot mode they come from the bundled file;
 // if a live chart request fails, the bundled closes for that ticker (real
 // Yahoo Finance data, through the snapshot date) are used and labelled.
+// Everything is kept per data source, so switching from the snapshot to the
+// live API starts clean even for a company that is already open (its effect
+// asks again before this component's own effects run).
+const NO_PRICES = new Map()
 function usePrices(snapshot) {
-  const [state, setState] = useState(() => new Map())
-  const asked = useRef(new Map())
-  useEffect(() => {
-    asked.current = new Map()
-    setState(new Map())
-  }, [snapshot])
+  const [store, setStore] = useState(() => ({ snapshot, map: new Map() }))
+  const asked = useRef({ snapshot, map: new Map() })
   const request = useCallback(
     (ticker, days) => {
-      const prev = asked.current.get(ticker)
+      if (asked.current.snapshot !== snapshot) asked.current = { snapshot, map: new Map() }
+      const mine = asked.current
+      const prev = mine.map.get(ticker)
       if (prev && prev >= days) return
-      asked.current.set(ticker, days)
+      mine.map.set(ticker, days)
+      // Drop answers that arrive after the data source changed.
+      const put = (v) =>
+        setStore((s) =>
+          asked.current !== mine ? s : { snapshot, map: new Map(s.snapshot === snapshot ? s.map : []).set(ticker, v) },
+        )
       const fromSnapshot = (snap) => {
         const c = snap?.charts?.[ticker]
-        return c ? { status: 'ready', prices: c.prices || [], source: 'snapshot', through: snap.generated_at } : null
+        return c ? { status: 'ready', prices: c.prices || [], source: 'snapshot' } : null
       }
       if (snapshot) {
-        setState((s) => new Map(s).set(ticker, fromSnapshot(snapshot) || { status: 'ready', prices: [], source: 'snapshot' }))
+        put(fromSnapshot(snapshot) || { status: 'ready', prices: [], source: 'snapshot' })
         return
       }
-      setState((s) => (s.get(ticker)?.status === 'ready' ? s : new Map(s).set(ticker, { status: 'loading' })))
+      setStore((s) =>
+        asked.current !== mine || (s.snapshot === snapshot && s.map.get(ticker)?.status === 'ready')
+          ? s
+          : { snapshot, map: new Map(s.snapshot === snapshot ? s.map : []).set(ticker, { status: 'loading' }) },
+      )
       getChart(ticker, days)
-        .then((d) => setState((s) => new Map(s).set(ticker, { status: 'ready', prices: d.prices || [], source: 'live' })))
+        .then((d) => put({ status: 'ready', prices: d.prices || [], source: 'live' }))
         .catch(() =>
           loadSnapshot()
             .then((snap) => fromSnapshot(snap))
             .catch(() => null)
             .then((fallback) => {
-              if (!fallback || fallback.prices.length < 2) asked.current.delete(ticker)
-              setState((s) => new Map(s).set(ticker, fallback && fallback.prices.length ? fallback : { status: 'error' }))
+              if (!fallback || fallback.prices.length < 2) mine.map.delete(ticker)
+              put(fallback && fallback.prices.length ? fallback : { status: 'error' })
             }),
         )
     },
     [snapshot],
   )
+  const state = store.snapshot === snapshot ? store.map : NO_PRICES
   return useMemo(() => ({ state, request }), [state, request])
 }
 
@@ -336,7 +351,7 @@ export default function App() {
           onOfficial={(o) => setFilters({ ...filters, official: o })}
         />
       )}
-      <Analytics />
+      {ANALYTICS && <Analytics />}
     </>
   )
 }

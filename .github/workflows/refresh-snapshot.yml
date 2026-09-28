@@ -77,4 +77,6 @@ jobs:
             exit 0
           fi
           git commit -m "Refresh demo snapshot ($(date -u +%Y-%m-%d))"
-          git push
+          # main may have moved while this ran; replay the commit on top.
+          git pull --rebase origin main
+          git push origin HEAD:main
