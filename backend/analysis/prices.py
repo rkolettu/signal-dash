@@ -3,21 +3,62 @@
 Daily closes only in MVP (intraday from yfinance is spotty beyond 60 days;
 add it later behind the same interface). All returns are % vs the close
 on/just before the mention date.
+
+During market hours yfinance's newest daily row is the session still in
+progress -- a moving intraday price, not a close. Rows are only cached or
+returned once their session has closed, and a ticker is re-fetched once
+after each new close so the cache picks up the final price.
 """
 import datetime as dt
 import yfinance as yf
 from db import conn
 
+try:
+    from zoneinfo import ZoneInfo
+    _NY = ZoneInfo("America/New_York")
+except Exception:  # no tz database available
+    _NY = None
+
+# U.S. equities close at 16:00 New York time; allow a few minutes for the
+# final closing print. Early-close days are simply treated as final at 16:20.
+CLOSE_FINAL = dt.time(16, 20)
+
+# ticker -> latest final session it has been fetched for (this process)
+_synced = {}
+
+def _now_ny():
+    if _NY is not None:
+        return dt.datetime.now(_NY)
+    # Without tz data, use UTC-5: the 16:20 cutoff then falls at 21:20 UTC,
+    # after the close in both EST (21:00 UTC) and EDT (20:00 UTC).
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(hours=5)
+
+def last_final_session(now=None):
+    """Most recent weekday whose close is final. Market holidays aren't
+    modelled; on one, the day before is still the latest real close."""
+    now = now or _now_ny()
+    d = now.date()
+    if d.weekday() >= 5 or now.time() < CLOSE_FINAL:
+        d -= dt.timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= dt.timedelta(days=1)
+    return d
+
 def _fetch_range(ticker: str, start: dt.date, end: dt.date):
-    """Return {date_iso: close}, cache-first."""
+    """Return {date_iso: close} for completed sessions only, cache-first."""
+    final = last_final_session()
+    upto = min(end, final)
     with conn() as c:
         rows = c.execute(
             "SELECT date, close FROM price_cache WHERE ticker=? AND date>=? AND date<=?",
-            (ticker, start.isoformat(), end.isoformat())).fetchall()
+            (ticker, start.isoformat(), upto.isoformat())).fetchall()
     cached = {r["date"]: r["close"] for r in rows}
-    # crude completeness check: expect ~5 trading days per 7 calendar days
-    expected = max(1, int((end - start).days * 5 / 7) - 3)
-    if len(cached) >= expected:
+    # crude completeness check: expect ~5 trading days per 7 calendar days,
+    # counting only up to the last completed session
+    expected = max(1, int((upto - start).days * 5 / 7) - 3)
+    # a range that reaches the newest close is re-fetched once per new close
+    stale = end >= final and _synced.get(ticker) != final
+    if len(cached) >= expected and not stale:
         return cached
     try:
         hist = yf.Ticker(ticker).history(start=start.isoformat(),
@@ -25,15 +66,18 @@ def _fetch_range(ticker: str, start: dt.date, end: dt.date):
                                          interval="1d", auto_adjust=True)
     except Exception:
         return cached
+    _synced[ticker] = final
     if hist is None or hist.empty:
         return cached
     out = {}
     with conn() as c:
         for idx, row in hist.iterrows():
-            d = idx.date().isoformat()
-            out[d] = float(row["Close"])
+            d = idx.date()
+            if d > final:  # session still trading: not a close yet
+                continue
+            out[d.isoformat()] = float(row["Close"])
             c.execute("INSERT OR REPLACE INTO price_cache (ticker, date, close) VALUES (?,?,?)",
-                      (ticker, d, out[d]))
+                      (ticker, d.isoformat(), out[d.isoformat()]))
     return out
 
 def series(ticker: str, days: int = 90):

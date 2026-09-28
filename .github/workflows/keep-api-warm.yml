@@ -1,0 +1,37 @@
+name: Keep API warm
+
+# Render's free tier puts the API to sleep after 15 idle minutes, and the
+# next visitor waits up to a minute for it to wake. A light request every
+# 10 minutes keeps it up. One free web service running all month fits in
+# Render's 750 free instance hours. Set the repository variable
+# SIGNAL_DASH_API_URL if the API moves.
+
+on:
+  schedule:
+    # off the top of the hour, when GitHub's scheduler is busiest
+    - cron: "7-59/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the API
+        env:
+          API_URL: ${{ vars.SIGNAL_DASH_API_URL || 'https://signal-dash.onrender.com' }}
+        run: |
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "$API_URL/api/officials" || true)
+            if [ "$code" = "200" ]; then
+              echo "API is up"
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP ${code:-no response}"
+            sleep 20
+          done
+          # Warn rather than fail: the site falls back to its snapshot, and a
+          # failure every 10 minutes would flood the inbox.
+          echo "::warning::The API did not answer with HTTP 200"

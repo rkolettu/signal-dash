@@ -1,253 +1,342 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip,
-  ReferenceDot, CartesianGrid,
-} from 'recharts'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Analytics } from '@vercel/analytics/react'
-import { getFeed, getStocks, getChart, getSignals, getOfficials, exportUrl } from './api.js'
+import { getFeed, getStocks, getSignals, getChart, FEED_LIMIT, exportUrl, loadSnapshot, toCSV } from './api.js'
+import { buildModel, aggregate, matches, isFiltered, EMPTY_FILTERS } from './lib/data.js'
+import { prefersReducedMotion, safeSession, useMedia, useReducedMotion } from './lib/motion.js'
+import Header from './components/Header.jsx'
+import FilterRail from './components/FilterRail.jsx'
+import Stage from './components/Stage.jsx'
+import Companies from './components/Companies.jsx'
+import Statements from './components/Statements.jsx'
+import FlaggedDays from './components/FlaggedDays.jsx'
+import Method from './components/Method.jsx'
+import Footer from './components/Footer.jsx'
+import CommandMenu from './components/CommandMenu.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
-const RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
+// The deployed demo runs on synthetic posts. Set VITE_DEMO_DATA=false at
+// build time once the backend is ingesting real posts.
+export const DEMO = import.meta.env.VITE_DEMO_DATA !== 'false'
 
-const fmtDate = (iso) => iso?.slice(0, 10) ?? ''
-const sentClass = (s) => (s >= 0.25 ? 'pos' : s <= -0.25 ? 'neg' : 'neu')
+// VITE_DATA_SOURCE=snapshot builds a static site that never calls the API.
+const STATIC = import.meta.env.VITE_DATA_SOURCE === 'snapshot'
+// How long to wait on a sleeping API before showing the bundled snapshot.
+const SNAPSHOT_AFTER = 12
 
-function SentimentPill({ value }) {
-  return <span className={`pill ${sentClass(value)}`}>{value?.toFixed(2)}</span>
-}
-
-function Filters({ filters, setFilters, officials, stocks }) {
-  const set = (k) => (e) => setFilters({ ...filters, [k]: e.target.value })
-  return (
-    <div className="filters">
-      <select value={filters.official || ''} onChange={set('official')}>
-        <option value="">All officials</option>
-        {officials.map((o) => <option key={o.official}>{o.official}</option>)}
-      </select>
-      <select value={filters.ticker || ''} onChange={set('ticker')}>
-        <option value="">All stocks</option>
-        {stocks.map((s) => <option key={s.ticker}>{s.ticker}</option>)}
-      </select>
-      <select value={filters.platform || ''} onChange={set('platform')}>
-        <option value="">All platforms</option>
-        <option value="truth_social">Truth Social</option>
-        <option value="x">X</option>
-      </select>
-      <input type="date" value={filters.since || ''} onChange={set('since')} />
-      <input type="date" value={filters.until || ''} onChange={set('until')} />
-      <a className="btn" href={exportUrl}>Export CSV</a>
-    </div>
-  )
-}
-
-function Feed({ posts, onPickTicker }) {
-  return (
-    <div className="feed">
-      {posts.map((p) => (
-        <article key={p.id} className="post">
-          <header>
-            <strong>{p.official}</strong>
-            <span className="meta">{p.platform === 'truth_social' ? 'Truth Social' : 'X'} · {fmtDate(p.posted_at)}</span>
-            <SentimentPill value={p.sentiment} />
-          </header>
-          <p>{p.text}</p>
-          <footer>
-            {p.mentions.map((m) => (
-              <button key={m.ticker} className="ticker" onClick={() => onPickTicker(m.ticker)}>
-                ${m.ticker}
-              </button>
-            ))}
-            <span className="meta">{p.engagement.toLocaleString()} engagements</span>
-          </footer>
-        </article>
-      ))}
-      {posts.length === 0 && <p className="empty">No flagged posts match these filters. Widen the date range or clear a filter.</p>}
-    </div>
-  )
-}
-
-function StocksTable({ stocks, onPick, active }) {
-  return (
-    <table className="stocks">
-      <thead>
-        <tr><th>Ticker</th><th>Mentions</th><th>Avg sent.</th><th>Officials</th></tr>
-      </thead>
-      <tbody>
-        {stocks.map((s) => (
-          <tr key={s.ticker} className={active === s.ticker ? 'active' : ''}
-              onClick={() => onPick(s.ticker)}>
-            <td className="mono">${s.ticker}</td>
-            <td className="mono">{s.mentions}</td>
-            <td><SentimentPill value={s.avg_sentiment} /></td>
-            <td className="officials-cell">{s.officials.length}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function PriceChart({ ticker }) {
-  const [range, setRange] = useState('3M')
-  const [data, setData] = useState(null)
+function useData() {
+  const [attempt, setAttempt] = useState(0)
+  const [load, setLoad] = useState({ phase: 'connecting', elapsed: 0, readyIn: null, source: null, reason: null })
+  const [raw, setRaw] = useState(null)
+  const [pendingLive, setPendingLive] = useState(null)
   useEffect(() => {
-    if (!ticker) return
-    setData(null)
-    getChart(ticker, RANGES[range]).then(setData)
-  }, [ticker, range])
-
-  const merged = useMemo(() => {
-    if (!data) return []
-    const mentionDays = new Set(data.mentions.map((m) => m.date))
-    return data.prices.map((p) => ({ ...p, mention: mentionDays.has(p.date) ? p.close : null }))
-  }, [data])
-
-  if (!ticker) return <p className="empty">Select a stock to overlay mentions on its price chart.</p>
-  if (!data) return <p className="empty">Loading {ticker}…</p>
-  if (data.prices.length === 0) {
-    return <p className="empty">No price data returned for ${ticker}. yfinance may be rate-limited — retry shortly.</p>
-  }
-  return (
-    <div className="chart">
-      <div className="chart-head">
-        <h3 className="mono">${ticker}</h3>
-        <div className="ranges">
-          {Object.keys(RANGES).map((r) => (
-            <button key={r} className={r === range ? 'active' : ''} onClick={() => setRange(r)}>{r}</button>
-          ))}
-        </div>
-      </div>
-      <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={merged} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid stroke="var(--grid)" strokeDasharray="2 4" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={40} />
-          <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11 }} width={52} />
-          <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--grid)', fontSize: 12 }} />
-          <Line type="monotone" dataKey="close" stroke="var(--line)" dot={false} strokeWidth={1.6} />
-          {merged.filter((d) => d.mention !== null).map((d) => (
-            <ReferenceDot key={d.date} x={d.date} y={d.mention} r={5}
-                          fill="var(--accent)" stroke="var(--bg)" strokeWidth={2} />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-      <p className="legend"><span className="dot" /> official mention on that trading day</p>
-    </div>
-  )
+    let alive = true
+    let settled = false
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+    const started = performance.now()
+    setLoad((l) => ({ phase: 'connecting', elapsed: 0, readyIn: null, source: l.source, reason: null }))
+    setPendingLive(null)
+    const timer = setInterval(() => {
+      const s = Math.floor((performance.now() - started) / 500) / 2
+      if (s >= SNAPSHOT_AFTER) fallBack('slow')
+      setLoad((l) =>
+        l.phase === 'ready' || l.phase === 'error' || l.elapsed === s
+          ? l
+          : { ...l, elapsed: s, phase: s >= 2.5 ? 'waking' : 'connecting' },
+      )
+    }, 250)
+    const ready = (data, source, reason = null, extra = {}) => {
+      settled = true
+      clearInterval(timer)
+      setRaw(data)
+      setLoad((l) => ({ ...l, phase: 'ready', readyIn: performance.now() - started, source, reason, ...extra }))
+    }
+    function fallBack(reason) {
+      if (!alive || settled) return
+      settled = true
+      loadSnapshot()
+        .then((snap) => {
+          if (!alive) return
+          ready({ feed: snap.feed, stocks: snap.stocks, signals: snap.signals, snapshot: snap }, 'snapshot', reason, {
+            snapshotAt: snap.generated_at,
+          })
+        })
+        .catch(() => alive && setLoad((l) => ({ ...l, phase: 'error', elapsed: (performance.now() - started) / 1000 })))
+    }
+    if (STATIC) {
+      fallBack('static')
+    } else {
+      const o = ctrl ? { signal: ctrl.signal } : undefined
+      Promise.all([getFeed({ limit: FEED_LIMIT }, o), getStocks(o), getSignals(o).catch(() => [])])
+        .then(([feed, stocks, signals]) => {
+          if (!alive) return
+          // Arrived after the snapshot was already on screen: offer it
+          // instead of swapping the data under the reader.
+          if (settled) setPendingLive({ feed, stocks, signals })
+          else ready({ feed, stocks, signals }, 'live')
+        })
+        .catch((err) => fallBack(err?.reason || 'unreachable'))
+    }
+    return () => {
+      alive = false
+      ctrl?.abort()
+      clearInterval(timer)
+    }
+  }, [attempt])
+  const retry = useCallback(() => setAttempt((a) => a + 1), [])
+  const switchToLive = useCallback(() => {
+    if (!pendingLive) return
+    setRaw(pendingLive)
+    setPendingLive(null)
+    setLoad((l) => ({ ...l, source: 'live', reason: null }))
+  }, [pendingLive])
+  return { load, raw, retry, pendingLive: Boolean(pendingLive), switchToLive }
 }
 
-function Signals({ signals, onPickTicker }) {
-  return (
-    <div className="signals">
-      {signals.map((s) => (
-        <div key={s.id} className={`signal ${s.kind}`}>
-          <button className="ticker" onClick={() => onPickTicker(s.ticker)}>${s.ticker}</button>
-          <span className="kind">{s.kind}</span>
-          <span className="mono">{s.date}</span>
-          <span className="meta">{s.officials.join(', ')}</span>
-          <span className="mono conf">{Math.round(s.confidence * 100)}%</span>
-        </div>
-      ))}
-      {signals.length === 0 && <p className="empty">No anomalies detected yet.</p>}
-    </div>
+// Daily closes per ticker. In snapshot mode they come from the bundled file;
+// if a live chart request fails, the bundled closes for that ticker (real
+// Yahoo Finance data, through the snapshot date) are used and labelled.
+function usePrices(snapshot) {
+  const [state, setState] = useState(() => new Map())
+  const asked = useRef(new Map())
+  useEffect(() => {
+    asked.current = new Map()
+    setState(new Map())
+  }, [snapshot])
+  const request = useCallback(
+    (ticker, days) => {
+      const prev = asked.current.get(ticker)
+      if (prev && prev >= days) return
+      asked.current.set(ticker, days)
+      const fromSnapshot = (snap) => {
+        const c = snap?.charts?.[ticker]
+        return c ? { status: 'ready', prices: c.prices || [], source: 'snapshot', through: snap.generated_at } : null
+      }
+      if (snapshot) {
+        setState((s) => new Map(s).set(ticker, fromSnapshot(snapshot) || { status: 'ready', prices: [], source: 'snapshot' }))
+        return
+      }
+      setState((s) => (s.get(ticker)?.status === 'ready' ? s : new Map(s).set(ticker, { status: 'loading' })))
+      getChart(ticker, days)
+        .then((d) => setState((s) => new Map(s).set(ticker, { status: 'ready', prices: d.prices || [], source: 'live' })))
+        .catch(() =>
+          loadSnapshot()
+            .then((snap) => fromSnapshot(snap))
+            .catch(() => null)
+            .then((fallback) => {
+              if (!fallback || fallback.prices.length < 2) asked.current.delete(ticker)
+              setState((s) => new Map(s).set(ticker, fallback && fallback.prices.length ? fallback : { status: 'error' }))
+            }),
+        )
+    },
+    [snapshot],
   )
+  return useMemo(() => ({ state, request }), [state, request])
+}
+
+const readHash = () => {
+  const m = /^#\/([A-Za-z0-9.-]+)(?:\/(\d+))?$/.exec(window.location.hash || '')
+  return m ? { ticker: m[1].toUpperCase(), id: m[2] ? `${m[2]}:${m[1].toUpperCase()}` : null } : { ticker: null, id: null }
+}
+const writeHash = (ticker, id) => {
+  const h = ticker ? `#/${ticker}${id ? `/${id.split(':')[0]}` : ''}` : ''
+  try {
+    if ((window.location.hash || '') === h) return
+    window.history.pushState(null, '', h || window.location.pathname + window.location.search)
+  } catch {
+    /* history can be unavailable in some embedded webviews */
+  }
 }
 
 export default function App() {
-  const [filters, setFilters] = useState({})
-  const [posts, setPosts] = useState([])
-  const [stocks, setStocks] = useState([])
-  const [officials, setOfficials] = useState([])
-  const [signals, setSignals] = useState([])
-  const [ticker, setTicker] = useState(null)
-  const [status, setStatus] = useState('loading')
+  const reduced = useReducedMotion()
+  const compact = useMedia('(max-width: 760px)')
+  const { load, raw, retry, pendingLive, switchToLive } = useData()
+  const model = useMemo(() => (raw ? buildModel(raw.feed, raw.stocks, raw.signals) : null), [raw])
+  const snapshot = raw?.snapshot || null
+  const prices = usePrices(snapshot)
 
-  useEffect(() => { getFeed(filters).then(setPosts).catch(() => {}) }, [filters])
+  // Offline, the CSV is the backend's own export rows from the snapshot.
+  const csv = useMemo(() => {
+    if (!snapshot) return { href: exportUrl, download: undefined }
+    try {
+      return {
+        href: URL.createObjectURL(new Blob([toCSV(snapshot.export || [])], { type: 'text/csv' })),
+        download: 'signals.csv',
+      }
+    } catch {
+      return { href: exportUrl, download: undefined }
+    }
+  }, [snapshot])
+  useEffect(() => () => csv.href.startsWith('blob:') && URL.revokeObjectURL(csv.href), [csv])
+  const source = { load, pendingLive, switchToLive, retry, snapshot, isStatic: STATIC }
+
+  /* ---- intro: full-bleed loader → docking → dashboard ---- */
+  const [intro, setIntro] = useState(() => (prefersReducedMotion() || safeSession('sd-intro') ? 'docked' : 'full'))
   useEffect(() => {
-    Promise.all([
-      getStocks().then(setStocks),
-      getSignals().then(setSignals),
-      getOfficials().then(setOfficials),
-    ])
-      .then(() => setStatus('ready'))
-      .catch(() => setStatus('error'))
-  }, [])
+    if (intro !== 'full' || load.phase !== 'ready') return undefined
+    // Quick loads dock almost at once; after a long wait, let the noise
+    // visibly organise on the full-bleed stage before it docks.
+    const t = setTimeout(() => setIntro('docking'), load.readyIn < 900 ? 300 : 1300)
+    return () => clearTimeout(t)
+  }, [intro, load.phase, load.readyIn])
+  useEffect(() => {
+    if (intro !== 'docking') return undefined
+    const t = setTimeout(
+      () => {
+        setIntro('docked')
+        safeSession('sd-intro', '1')
+      },
+      reduced ? 0 : 1350,
+    )
+    return () => clearTimeout(t)
+  }, [intro, reduced])
+  const skip = useCallback(() => setIntro((i) => (i === 'full' ? 'docking' : i)), [])
+  useEffect(() => {
+    document.documentElement.classList.toggle('is-locked', intro === 'full')
+  }, [intro])
 
-  const pickTicker = (t) => { setTicker(t); setFilters({ ...filters, ticker: t }) }
+  /* ---- filters and selection ---- */
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [sel, setSel] = useState({ ticker: null, id: null })
+  const [view, setView] = useState('clusters')
+  const [cmd, setCmd] = useState(false)
+
+  const select = useCallback((ticker, id = null) => {
+    setSel({ ticker: ticker || null, id: ticker ? id : null })
+    writeHash(ticker, ticker ? id : null)
+  }, [])
+  const selRef = useRef(sel)
+  selRef.current = sel
+  const back = useCallback(() => {
+    const s = selRef.current
+    if (s.id) select(s.ticker)
+    else select(null)
+  }, [select])
+
+  // Deep links (#/PLTR or #/PLTR/59) and the browser back button.
+  useEffect(() => {
+    if (!model || intro !== 'docked') return undefined
+    const apply = () => {
+      const h = readHash()
+      if (h.ticker && !model.companies.has(h.ticker)) return setSel({ ticker: null, id: null })
+      if (h.id && !model.mentions.some((m) => m.id === h.id)) h.id = null
+      setSel(h)
+    }
+    apply()
+    window.addEventListener('popstate', apply)
+    return () => window.removeEventListener('popstate', apply)
+  }, [model, intro])
+
+  const visible = useMemo(() => {
+    if (!model || !isFiltered(filters)) return null
+    return new Set(model.mentions.filter((m) => matches(m, filters)).map((m) => m.id))
+  }, [model, filters])
+  const agg = useMemo(
+    () => (model ? aggregate(visible ? model.mentions.filter((m) => visible.has(m.id)) : model.mentions) : new Map()),
+    [model, visible],
+  )
+  const flaggedByTicker = useMemo(() => {
+    const by = new Map()
+    if (!model) return by
+    for (const f of model.flaggedDays) {
+      if (filters.since != null && f.t + 86400000 < filters.since) continue
+      if (filters.until != null && f.t > filters.until) continue
+      if (!by.has(f.ticker)) by.set(f.ticker, [])
+      by.get(f.ticker).push(f)
+    }
+    return by
+  }, [model, filters])
+
+  const focusCompany = useCallback(
+    (ticker, id = null) => {
+      select(ticker, id)
+      const top = document.getElementById('field')
+      if (top) top.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    },
+    [select, reduced],
+  )
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !/input|textarea|select/i.test(e.target.tagName))) {
+        e.preventDefault()
+        if (model) setCmd((c) => !c)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [model])
 
   return (
-    <div className="shell">
-      <header className="masthead">
-        <h1>SIGNAL<span>/</span>DASH</h1>
-        <p>Stock mentions in official posts · Truth Social + X · research use</p>
-      </header>
-
-      <div className="notice demo">
-        <strong>Demo.</strong> Posts shown are synthetic samples, not real
-        statements by any official. The ingestion pipeline is built and pulls
-        live Truth Social and X posts once API credentials are configured.
-      </div>
-
-      {status === 'loading' && (
-        <div
-          className="notice waking"
-          style={{
-            minHeight: 190,
-            padding: '1.6rem',
-            marginTop: '1rem',
-            marginBottom: '1.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            gap: '0.45rem',
-          }}
-        >
-          <strong style={{ color: 'var(--text)', fontSize: '1.05rem' }}>Loading market data…</strong>
-          <span>
-            Signal Dash runs on free hosting, so the backend goes to sleep after
-            being idle. The first visit can take up to a minute while it wakes up.
-          </span>
-          <span className="meta">The dashboard will appear automatically when the data service is ready.</span>
-        </div>
-      )}
-
-      {status === 'error' && (
-        <div
-          className="notice failed"
-          style={{
-            minHeight: 150,
-            padding: '1.6rem',
-            marginTop: '1rem',
-            marginBottom: '1.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            gap: '0.45rem',
-          }}
-        >
-          <strong style={{ color: 'var(--text)', fontSize: '1.05rem' }}>The backend didn't respond.</strong>
-          <span>It may still be starting up. Reload the page in a moment and the dashboard should come through.</span>
-        </div>
-      )}
-
-      {status === 'ready' && (
-        <>
-          <Filters filters={filters} setFilters={setFilters} officials={officials} stocks={stocks} />
-          <main className="grid">
-            <section className="col">
-              <h2>Flagged feed <span className="count mono">{posts.length}</span></h2>
-              <Feed posts={posts} onPickTicker={pickTicker} />
-            </section>
-            <section className="col">
-              <h2>Price correlation</h2>
-              <PriceChart ticker={ticker} />
-              <h2>Mentioned stocks</h2>
-              <StocksTable stocks={stocks} onPick={pickTicker} active={ticker} />
-              <h2>Trading signals</h2>
-              <Signals signals={signals} onPickTicker={pickTicker} />
-            </section>
-          </main>
-        </>
+    <>
+      <a className="skip-link" href="#companies">
+        Skip to companies
+      </a>
+      <Header intro={intro} demo={DEMO} csv={csv} source={source}>
+        <FilterRail
+          show={intro !== 'full'}
+          model={model}
+          filters={filters}
+          setFilters={setFilters}
+          onSearch={() => setCmd(true)}
+          anchor={snapshot ? Date.parse(snapshot.generated_at) : null}
+          sel={sel}
+          select={select}
+        />
+      </Header>
+      <main>
+        <h1 className="sr-only">Signal Dash: company mentions by U.S. officials and the stock around each one</h1>
+        <Stage
+          model={model}
+          load={load}
+          visible={visible}
+          agg={agg}
+          sel={sel}
+          select={select}
+          back={back}
+          view={view}
+          setView={setView}
+          reduced={reduced}
+          compact={compact}
+          intro={intro}
+          onSkip={skip}
+          onRetry={retry}
+          prices={prices}
+          filters={filters}
+          setFilters={setFilters}
+          flaggedByTicker={flaggedByTicker}
+        />
+        {intro !== 'full' && (
+          <ErrorBoundary className="container">
+            <div className="paper">
+              <Companies model={model} agg={agg} sel={sel} onPick={focusCompany} filtered={isFiltered(filters)} />
+              <Statements
+                model={model}
+                visible={visible}
+                filters={filters}
+                onPick={focusCompany}
+                demo={DEMO}
+                sel={sel}
+                snapshot={snapshot}
+              />
+              <FlaggedDays model={model} filters={filters} onPick={focusCompany} />
+              <Method csv={csv} />
+            </div>
+          </ErrorBoundary>
+        )}
+      </main>
+      {intro !== 'full' && <Footer csv={csv} />}
+      {cmd && model && (
+        <CommandMenu
+          model={model}
+          agg={agg}
+          onClose={() => setCmd(false)}
+          onCompany={(t) => focusCompany(t)}
+          onMention={(m) => focusCompany(m.ticker, m.id)}
+          onOfficial={(o) => setFilters({ ...filters, official: o })}
+        />
       )}
       <Analytics />
-    </div>
+    </>
   )
 }
