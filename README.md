@@ -22,6 +22,27 @@ npm install
 npm run dev                    # http://localhost:5173 (proxies /api -> :8000)
 ```
 
+## Offline snapshot
+
+The frontend works without the API. If the backend can't be reached — nothing
+listening, a static host with no `/api`, or a sleeping free-tier instance that
+hasn't answered within ~12 s — it loads a bundled snapshot of the demo dataset
+(`frontend/src/data/demo-snapshot.json`) and says so in the header. If the API
+wakes up afterwards, the header offers to switch to live data.
+
+The snapshot is produced by the real pipeline, not written by hand: the
+synthetic demo posts go through ticker extraction, VADER and the flag rule in a
+throwaway database, and the file holds exactly what the API returns, including
+real Yahoo Finance daily closes and the CSV export rows. Regenerate it after the
+U.S. market close so the newest bar is a final close:
+
+```bash
+cd backend && python export_snapshot.py
+```
+
+To build a static site that never calls the API, set
+`VITE_DATA_SOURCE=snapshot` at build time.
+
 ## Run inside VS Code
 
 The `vscode-extension/` folder packages the dashboard as a VS Code webview.

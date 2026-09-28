@@ -36,9 +36,18 @@ backend/  (Python 3.11+, FastAPI, SQLite)
   app.py                 endpoints: /api/feed /api/stocks /api/stocks/{t}/chart
                          /api/signals /api/officials /api/export /api/ingest/{source}
   seed_demo.py           synthetic data so UI works with zero keys
-frontend/ (Vite + React + Recharts)
-  Feed w/ filters, stocks summary table, price chart w/ mention markers,
-  signals list, CSV export. Dark ledger theme (styles.css tokens).
+  export_snapshot.py     writes the demo dataset + real daily closes to
+                         frontend/src/data/demo-snapshot.json (offline mode)
+frontend/ (Vite + React, no chart library)
+  field/engine.js        Canvas 2D signal field: one particle per mention,
+                         clusters by company, timeline lanes, price-line placement
+  components/Stage.jsx   hero: loader that docks into the stage; field,
+                         timeline, company and event views
+  components/*           filter rail, ⌘K search, companies index, statements,
+                         flagged days, method; SVG price chart
+  lib/data.js            model + observed change (mirrors prices.around_mention)
+  api.js                 API client with cold-start handling and snapshot fallback
+  Paper/ink theme shared with the portfolio and EDGAR projects (styles.css tokens).
 ```
 
 ## Backlog (in priority order)
