@@ -21,7 +21,9 @@ AMBIGUOUS = {"A","ALL","AN","ANY","ARE","BE","BIG","BY","CAN","CAR","CAT","DD",
              "FOR","FUN","GO","GOOD","HAS","HE","IT","LOVE","LOW","MAIN","MAN",
              "NEXT","NICE","NOW","ON","ONE","OPEN","OR","OUT","PLAY","REAL",
              "RUN","SEE","SO","SAFE","TELL","TWO","UP","WELL","YOU","EAT","BEST",
-             "TRUE","LIFE","EVER","FAST","FREE","HUGE","JOB","PAY","BIG"}
+             "TRUE","LIFE","EVER","FAST","FREE","HUGE","JOB","PAY","BIG",
+             # common in all-caps political posts ("GREAT TEAM!", "USA!")
+             "GOLD","HELP","HOPE","TEAM","USA"}
 
 # One-word company names (after suffix stripping) that are everyday words,
 # or common first names / place names, in posts by officials. Matching them

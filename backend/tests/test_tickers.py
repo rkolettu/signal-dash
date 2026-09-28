@@ -46,6 +46,13 @@ def test_common_words_do_not_match_in_caps(universe):
     assert found("GREAT TEAM! BULLISH ON AMERICA!") == []
 
 
+def test_ambiguous_bare_tickers_need_a_cashtag(monkeypatch):
+    rows = SEC_ROWS + [("TEAM", "Atlassian Corp"), ("USA", "Liberty All Star Equity Fund"), ("GOLD", "Barrick Mining Corp")]
+    monkeypatch.setattr(tickers, "_universe", tickers.build_universe(rows))
+    assert found("GREAT TEAM! GOD BLESS THE USA! GOLD STANDARD!") == []
+    assert found("$TEAM and $GOLD") == ["TEAM", "GOLD"]
+
+
 def test_common_word_names_still_match_by_cashtag(universe):
     assert found("$BLSH and $TISI") == ["BLSH", "TISI"]
 

@@ -44,6 +44,25 @@ cd backend && python export_snapshot.py
 To build a static site that never calls the API, set
 `VITE_DATA_SOURCE=snapshot` at build time.
 
+## Keeping the demo up (GitHub Actions)
+
+Two scheduled workflows in `.github/workflows/` keep the hosted demo current
+at no cost (Actions minutes are free for public repositories):
+
+- **Keep API warm** (`keep-api-warm.yml`) requests `/api/officials` every
+  10 minutes so Render's free instance never goes to sleep. One service
+  running all month fits in Render's 750 free instance hours. If the API
+  moves, set the repository variable `SIGNAL_DASH_API_URL`.
+- **Refresh demo snapshot** (`refresh-snapshot.yml`) runs on weekdays after
+  the U.S. close. It runs the backend tests, re-exports the snapshot with that
+  day's closes, checks it (enough prices, nothing stale) and commits it to
+  `main`, which redeploys Vercel. A run that can't get good data fails
+  without committing, so the last good snapshot stays. Both workflows can
+  also be started by hand from the Actions tab.
+
+GitHub disables scheduled workflows in public repositories after 60 days
+without activity; the daily snapshot commit keeps them running.
+
 ## Run inside VS Code
 
 The `vscode-extension/` folder packages the dashboard as a VS Code webview.
@@ -80,5 +99,6 @@ channel. To install permanently: `npx @vscode/vsce package` in
 | X via official pay-per-use | ~$30–40/mo |
 | yfinance prices | $0 |
 | Hosting (Render free + Vercel) | $0 |
+| GitHub Actions (public repo) | $0 |
 
 See `BUILD_PROMPT.md` for architecture details and the backlog.
