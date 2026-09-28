@@ -70,8 +70,9 @@ export default function Method({ csv }) {
             </li>
             <li>
               <strong>Name matching is literal.</strong> A one-word company name counts only when it’s capitalized, and names
-              that are everyday words (“bullish”, “team”) need a cashtag like $BLSH. A capitalized or all-caps word can still
-              collide with a ticker; cashtags are the most reliable match.
+              that are everyday words (“bullish”, “team”) need a cashtag like $BLSH. So do tickers that double as words or
+              abbreviations (“HELP IS ON THE WAY”, “ICE”, “AI”). A reviewed list can still miss a collision; cashtags are the
+              most reliable match.
             </li>
             <li>
               <strong>Tone is a lexicon score.</strong> VADER is general-purpose; it can miss sarcasm and finance-specific

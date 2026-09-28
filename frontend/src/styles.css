@@ -40,6 +40,8 @@
   --stage-side: 20px;
   --stage-bottom: 20px;
   --su-pad-x: max(28px, calc(var(--gutter) - var(--stage-side)));
+  /* The fixed header spans the page, lined up with the stage's outer edges. */
+  --chrome-x: max(1.25rem, var(--stage-side));
 }
 
 * {
@@ -293,7 +295,7 @@ a {
   align-items: center;
   gap: 1rem;
   height: var(--header-h);
-  padding: 0 var(--gutter);
+  padding: 0 var(--chrome-x);
 }
 
 .brand {
@@ -392,7 +394,7 @@ a {
 
 .filter-rail {
   height: var(--rail-h);
-  padding: 0 var(--gutter);
+  padding: 0 var(--chrome-x);
   opacity: 0;
   transform: translateY(-8px);
   pointer-events: none;

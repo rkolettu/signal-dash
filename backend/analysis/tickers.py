@@ -2,7 +2,8 @@
 
 Two match classes only (per spec -- no indirect references):
   1. Cashtags / bare tickers: $TSLA always; bare AAPL only if in ticker set
-     AND not a common English word (whitelist approach for bare tickers).
+     AND not a common English word or abbreviation (AMBIGUOUS). Two-letter
+     bare tickers only for a short list (BARE_TWO_LETTER).
   2. Company names from SEC's public company_tickers.json, normalized
      (strip Inc/Corp/Co/Ltd suffixes), matched on word boundaries.
      Names are proper nouns, so a one-word name must appear capitalized
@@ -16,14 +17,46 @@ SEC_URL = "https://www.sec.gov/files/company_tickers.json"
 CACHE = os.path.join(os.path.dirname(__file__), "sec_tickers.json")
 UA = {"User-Agent": "signal-dash research tool (contact: you@example.com)"}
 
-# Bare tickers that collide with English words -- require $ prefix for these.
-AMBIGUOUS = {"A","ALL","AN","ANY","ARE","BE","BIG","BY","CAN","CAR","CAT","DD",
-             "FOR","FUN","GO","GOOD","HAS","HE","IT","LOVE","LOW","MAIN","MAN",
-             "NEXT","NICE","NOW","ON","ONE","OPEN","OR","OUT","PLAY","REAL",
-             "RUN","SEE","SO","SAFE","TELL","TWO","UP","WELL","YOU","EAT","BEST",
-             "TRUE","LIFE","EVER","FAST","FREE","HUGE","JOB","PAY","BIG",
-             # common in all-caps political posts ("GREAT TEAM!", "USA!")
-             "GOLD","HELP","HOPE","TEAM","USA"}
+# Bare tickers that are also everyday words or abbreviations need a $ prefix:
+# "HELP IS ON THE WAY" (WAY), "ICE agents" (ICE), "the DOW" (DOW), "NOV 5"
+# (NOV). Reviewed by hand from the SEC tickers that appear in a common-English
+# word list, plus government and news abbreviations and the all-caps words of
+# political posts. Brands whose ticker mostly means the company (EBAY, IBM,
+# CVS, META, FOX, NYT) are left matchable, and company names still match.
+AMBIGUOUS = frozenset("""
+    ACA ACM ACRE ACT ADAM AERO AGO AIM AIR AKA ALL ALLY ALPS ALT ALTO AMP ANNA ANY
+    API APP APPS APT ARE ARM ASH ATI ATOM AURA BALL BAND BAR BARK BEAM BEAT BEN BEST
+    BETA BID BIG BILL BIO BIRD BIT BMI BOC BOIL BOLD BOLT BON BOOM BOOT BOT BOW BOX
+    BRO BROS BUD BULL CAKE CAL CALM CAMP CAN CANE CAPS CAR CARD CARE CARL CARS CART
+    CASH CAST CAT CCD CDNA CDT CENT CERT CET CFR CHAD CHAR CHEF CHI CHOW CIA CMS
+    CNET COCO COIN COKE COLD COMP CON COO COOK COP CORN COST CPA CPS CSV CUB CUBE
+    CUE CURB CYAN DAN DARE DASH DAVE DBA DEA DEC DECK DEI DINO DNA DOC DOCS DOUG DOW
+    DRUG DSC DSL DULL DUO EARN EAT ECHO ECO EDIT EDU EGG EGO ELF ELLA EMMA EMO
+    ENT EOS ERIC ERIE ESQ EVER EXE EXP EXPO EYE EZRA FACT FAST FATE FAX FEED FIG
+    FIGS FINS FIT FIVE FIX FLEX FLUX FLY FOIL FOR FORM FORTY FOUR FREE FROG FUN FUND
+    FURY FUSE GAIN GAME GAP GEL GEN GEO GIFT GIS GLAD GLUE GOLD GOLF GOOD GRAB GROW
+    GSM GUT GUTS HALO HAS HAWK HELP HERE HHS HIT HOG HON HOOD HOPE HOST HOUR HUGE
+    HUM HUT ICE ICON IDE III INN IONS IRON IRS IVF JACK JAN JAZZ JILL JOB JOE KAI
+    KEN KEY KEYS KIDS KIM LAB LAKE LAND LAW LEE LEGO LEN LEO LEU LIEN LIFE LIME LINE
+    LINK LION LITE LIVE LNG LOAN LOOP LOT LOVE LOW LUCK LUCY LUNG LUV LYNX MAC MAIN
+    MAMA MAN MAPS MAR MAS MASK MASS MAT MATH MAX MAZE MED MENS MESH MET MFG MIN MIND
+    MINE MIST MOB MOD MOVE MSM MSN MTA MUZE NANO NAT NATL NEO NEON NET NEXT NHS NICE
+    NINE NOAH NOTE NOV NOW NRC NWS NYC OCC ODD ONE ONTO OPAL OPEN OUT OWL OWLS PAC
+    PACK PAL PAM PAR PARA PARK PATH PAY PAYS PCT PDT PEG PEN PENN PEP PETS PGP PHD
+    PHI PHYS PICS PINE PINS PLAY PLUG PLUS POET POLE PONY POOL POR POST PPC PRE PROF
+    PROP PSA PTY PUMP PURE QUAD RACE RAIL RAIN RAMP RAND RARE RAVE REAL REED REF REG
+    RELY RENT RES REX RICK RIG RIO RIOT RNA ROAD ROCK ROMA ROOT RPM RUM RUN RYAN
+    SAFE SAIL SAM SAN SAT SAY SCI SEAT SEE SEED SELF SER SHIP SHOE SHOP SHOT SIG SIM
+    SITE SKIN SKY SNAP SNOW SOAR SOC SON SONG SOS SOUL SPOT SPY SRI SSL STAG STE
+    STEM STEP STEW STUB SUCH SUN SUNS SWIM TACO TAGS TAP TASK TEAM TECH TEL TELL TEN
+    TEX TIL TILE TMP TOON TOP TOPS TOUR TREE TREO TRI TRIP TRUE TWIN TWO TXT UNIT
+    UPC URI USA USB VAL VAT VEST VET VIA VIDA VII VIP WAL WASH WATT WAVE WAY WELL
+    WEST WING WIT WOLF WRAP WTF WWW YOU YUM ZION ZIP ZONE
+""".split())
+
+# Two capital letters are nearly always an abbreviation (AM, PM, US, UK, TX,
+# AI, TV), so a two-letter ticker needs a cashtag unless it is one of these.
+BARE_TWO_LETTER = frozenset({"BA", "GE", "GM"})
 
 # One-word company names (after suffix stripping) that are everyday words,
 # or common first names / place names, in posts by officials. Matching them
@@ -134,7 +167,7 @@ def extract(text: str):
 
     for m in _BAREWORD.finditer(text):
         t = m.group(1)
-        if t in tickers and t not in AMBIGUOUS:
+        if t in tickers and t not in AMBIGUOUS and (len(t) > 2 or t in BARE_TWO_LETTER):
             add(t, tickers[t], t)
 
     low = " " + _normalize_name(text) + " "

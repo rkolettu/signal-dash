@@ -53,6 +53,40 @@ def test_ambiguous_bare_tickers_need_a_cashtag(monkeypatch):
     assert found("$TEAM and $GOLD") == ["TEAM", "GOLD"]
 
 
+def test_everyday_word_tickers_need_a_cashtag(monkeypatch):
+    rows = SEC_ROWS + [
+        ("WAY", "Waystar Holding Corp."),
+        ("ICE", "Intercontinental Exchange, Inc."),
+        ("DOW", "DOW INC."),
+        ("NOV", "NOV Inc."),
+    ]
+    monkeypatch.setattr(tickers, "_universe", tickers.build_universe(rows))
+    assert found("HELP IS ON THE WAY!") == []
+    assert found("THANK YOU ICE! THE DOW IS AT A RECORD HIGH. SEE YOU NOV 5!") == []
+    assert found("$WAY and $ICE") == ["WAY", "ICE"]
+
+
+def test_two_letter_tickers_need_a_cashtag(monkeypatch):
+    rows = SEC_ROWS + [
+        ("AI", "C3.ai, Inc."),
+        ("UK", "Ucommune International Ltd"),
+        ("TX", "Ternium S.A."),
+        ("PM", "Philip Morris International Inc."),
+        ("GM", "General Motors Co"),
+    ]
+    monkeypatch.setattr(tickers, "_universe", tickers.build_universe(rows))
+    assert found("AI jobs are coming to TX, not the UK. Rally at 7 PM!") == []
+    assert found("$AI") == ["AI"]
+    # A short list of well-known two-letter tickers still match bare.
+    assert found("GM and BA are hiring") == ["GM", "BA"]
+
+
+def test_brand_tickers_still_match_bare(monkeypatch):
+    rows = SEC_ROWS + [("IBM", "INTERNATIONAL BUSINESS MACHINES CORP"), ("CVS", "CVS HEALTH Corp")]
+    monkeypatch.setattr(tickers, "_universe", tickers.build_universe(rows))
+    assert found("IBM and CVS") == ["IBM", "CVS"]
+
+
 def test_common_word_names_still_match_by_cashtag(universe):
     assert found("$BLSH and $TISI") == ["BLSH", "TISI"]
 
@@ -86,3 +120,7 @@ def test_real_sec_list(monkeypatch):
     assert found("Boeing") == ["BA"]
     assert found("Ford Motor") == ["F"]
     assert found("Met with the Tesla team today -- bullish on what they're building for America.") == ["TSLA"]
+    assert found("HELP IS ON THE WAY!") == []
+    assert found("THANK YOU ICE! THE DOW IS AT A RECORD HIGH. NO MORE DEI AT THE IRS!") == []
+    assert found("AI jobs are coming to TX. Rally in Phoenix, AZ at 7 PM ET!") == []
+    assert found("Big meeting at 2 PM with the CEO of GM.") == ["GM"]

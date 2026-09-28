@@ -45,7 +45,6 @@ export default function CompanyView({
   }, [request, ticker, days])
   const pmap = useMemo(() => (state?.status === 'ready' ? priceMap(state.prices) : null), [state])
   const change = useMemo(() => (event && pmap ? observedChange(pmap, event.day) : null), [event, pmap])
-  const latest = latestBar(state)
 
   // Pull the camera onto this company's cluster, centred where the chart is.
   const chartWrap = useRef(null)
@@ -129,7 +128,7 @@ export default function CompanyView({
       </div>
 
       <div className="cv-main">
-        {event ? <Reaction change={change} state={state} latest={latest} /> : <ChartHead state={state} a={a} />}
+        {event ? <Reaction change={change} state={state} /> : <ChartHead state={state} a={a} />}
         <div className="cv-chart" ref={chartWrap}>
           <PriceChart
             key={ticker}
@@ -147,12 +146,10 @@ export default function CompanyView({
         </div>
         <p className="cv-caption">
           {event
-            ? `Observed change in daily closes around the mention. It shows what the price did, not that the post moved it.${
-                latest ? ' The latest bar may be an unfinished trading day.' : ''
-              }`
+            ? 'Observed change in daily closes around the mention. It shows what the price did, not that the post moved it.'
             : state?.source === 'snapshot'
-              ? `Daily closes from Yahoo Finance, bundled with the offline snapshot. Each point is a mention, placed at the time it was posted.`
-              : 'Daily closes from Yahoo Finance; the newest bar may be an unfinished day. Each point is a mention, placed at the time it was posted.'}
+              ? 'Daily closes from Yahoo Finance, bundled with the offline snapshot. Each point is a mention, placed at the time it was posted.'
+              : 'Daily closes from Yahoo Finance, completed trading days only. Each point is a mention, placed at the time it was posted.'}
         </p>
       </div>
     </div>
@@ -168,7 +165,7 @@ function ChartHead({ state, a }) {
         {last ? (
           <>
             <span className="mono">{fmtPrice(last.close)}</span>
-            <span className="muted">latest bar · {fmtDay(last.date)}</span>
+            <span className="muted">last close · {fmtDay(last.date)}</span>
           </>
         ) : (
           <span className="muted">{state?.status === 'loading' || !state ? 'Loading…' : 'No prices'}</span>
@@ -324,18 +321,10 @@ function EventDetail({ event, ticker, select, prev, next, idx, total }) {
   )
 }
 
-// The newest daily bar is still moving if it is from the day the prices were
-// fetched (today live, or the snapshot's date); figures using it say so.
-function latestBar(state) {
-  if (state?.status !== 'ready' || state.prices.length < 2) return null
-  const last = state.prices[state.prices.length - 1].date
-  const fetched =
-    state.source === 'snapshot' && state.through ? state.through.slice(0, 10) : new Date().toISOString().slice(0, 10)
-  return last >= fetched ? last : null
-}
-
-function Reaction({ change, state, latest }) {
-  const when = (p) => (p ? `${fmtDay(p.date)}${p.date === latest ? ' · latest bar' : ''}` : 'not yet')
+// Every bar is a finished session: the API never returns a trading day
+// before its close, and the snapshot only bundles completed days.
+function Reaction({ change, state }) {
+  const when = (p) => (p ? fmtDay(p.date) : 'not yet')
   if (!state || state.status === 'loading')
     return (
       <div className="reaction is-empty">
@@ -369,16 +358,7 @@ function Reaction({ change, state, latest }) {
           <span className="rx-v">
             <Pct value={x.pct} />
           </span>
-          <span
-            className="rx-d mono"
-            title={
-              x.point?.date === latest
-                ? 'This bar is from the day prices were fetched and may be an unfinished trading day.'
-                : undefined
-            }
-          >
-            {when(x.point)}
-          </span>
+          <span className="rx-d mono">{when(x.point)}</span>
         </div>
       ))}
     </div>

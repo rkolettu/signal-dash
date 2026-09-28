@@ -88,7 +88,9 @@ export const loadSnapshot = () => import('./data/demo-snapshot.json').then((m) =
 // Same columns and order as the backend's /api/export CSV.
 export function toCSV(rows) {
   if (!rows.length) return ''
-  const cols = Object.keys(rows[0])
+  // Every column any row has, in first-seen order: a row without prices
+  // must not drop the price columns for the rest.
+  const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))]
   const cell = (v) => {
     if (v == null) return ''
     const s = String(v)
