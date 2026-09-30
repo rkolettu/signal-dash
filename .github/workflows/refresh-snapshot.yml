@@ -47,7 +47,9 @@ jobs:
         run: |
           python - <<'PY'
           import datetime as dt, json, sys
-          s = json.load(open("frontend/src/data/demo-snapshot.json"))
+          def no_nan(c):
+              sys.exit(f"Keeping the previous snapshot: {c} is not valid JSON")
+          s = json.load(open("frontend/src/data/demo-snapshot.json"), parse_constant=no_nan)
           problems = []
           if len(s["feed"]) < 10 or not s["stocks"]:
               problems.append("too few posts or companies")

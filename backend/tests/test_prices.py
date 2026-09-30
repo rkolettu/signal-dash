@@ -107,3 +107,18 @@ def test_around_mention_shape_and_base(env):
     fake.bars[TUE] = 121.0
     out = prices.around_mention("TSLA", f"{MON.isoformat()}T14:00:00Z")
     assert out["price_at_post"] == 110.0 and out["ret_1d"] == 10.0
+
+
+def test_unpublished_close_is_skipped_and_retried(env):
+    fake, clock = env
+    # After the close, Yahoo lists Monday but hasn't published its close yet.
+    fake.bars = {**WEEK, FRI: 100.0, MON: float("nan")}
+    clock["now"] = at(MON, 17)
+    data = prices._fetch_range("TSLA", FRI - dt.timedelta(days=5), MON)
+    assert MON.isoformat() not in data and data[FRI.isoformat()] == 100.0
+    assert MON.isoformat() not in cached_rows()
+    assert all(r["close"] == r["close"] for r in prices.series("TSLA", 10))  # no NaN
+    # the next request asks again and gets the real close
+    fake.bars[MON] = 102.9
+    data = prices._fetch_range("TSLA", FRI - dt.timedelta(days=5), MON)
+    assert data[MON.isoformat()] == 102.9
