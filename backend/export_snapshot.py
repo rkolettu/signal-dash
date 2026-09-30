@@ -53,7 +53,8 @@ def main():
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w") as f:
-        json.dump(snapshot, f, separators=(",", ":"))
+        # allow_nan=False: NaN isn't JSON, and the frontend build fails on it.
+        json.dump(snapshot, f, separators=(",", ":"), allow_nan=False)
     missing = [t for t, c in charts.items() if not c["prices"]]
     print(f"Wrote {os.path.relpath(OUT)}: {len(feed)} posts, {len(stocks)} tickers, "
           f"{len(signals)} signals, {len(rows)} export rows")
