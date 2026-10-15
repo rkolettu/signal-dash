@@ -98,7 +98,7 @@ def _is_price(v):
         return False
 
 def series(ticker: str, days: int = 90):
-    end = dt.date.today()
+    end = _now_ny().date()
     start = end - dt.timedelta(days=days)
     data = _fetch_range(ticker, start, end)
     return sorted(({"date": d, "close": p} for d, p in data.items()),
